@@ -46,3 +46,8 @@ button {
   color: #ff5a5a;
   font-weight: bold;
 }
+
+#searchBox{
+  margin:15px 0;
+  width:100%;
+}

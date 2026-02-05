@@ -1,9 +1,14 @@
 from flask import Flask, render_template, request, jsonify
+import os
 import pickle
 import re
 import requests
 from collections import Counter
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
 
 app = Flask(__name__)
 
@@ -50,22 +55,53 @@ def get_tmdb_movie_id_from_imdb(imdb_id: str):
         return data["movie_results"][0]["id"]
     return None
 
+def train_from_csv(csv_path):
+    df = pd.read_csv(csv_path)
+
+    df["review"] = df["review"].apply(clean_text)
+    df["sentiment"] = df["sentiment"].map({"positive":1, "negative":0})
+
+    X = df["review"]
+    y = df["sentiment"]
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+
+    vectorizer = TfidfVectorizer(max_features=5000)
+    X_train_vec = vectorizer.fit_transform(X_train)
+
+    model_new = LogisticRegression()
+    model_new.fit(X_train_vec, y_train)
+
+    # save updated model
+    pickle.dump(model_new, open("model/sentiment_model.pkl","wb"))
+    pickle.dump(vectorizer, open("model/tfidf_vectorizer.pkl","wb"))
+
+    return "Model updated successfully!"
 
 # ✅ Search TMDB movie by name
 def search_tmdb_movie_id(query: str):
     url = "https://api.themoviedb.org/3/search/movie"
     params = {"api_key": TMDB_API_KEY, "query": query}
-    r = requests.get(url, params=params, timeout=15)
+
+    try:
+        r = requests.get(url, params=params, timeout=20)
+    except requests.exceptions.RequestException:
+        print("TMDB search timeout/error")
+        return None
 
     if r.status_code != 200:
         return None
 
     data = r.json()
     results = data.get("results", [])
+
     if len(results) == 0:
         return None
 
-    return results[0]["id"]  # top match
+    return results[0]["id"]
+ # top match
 
 
 # ✅ Extract page title from URL (works for Wikipedia & many sites)
@@ -115,6 +151,38 @@ def get_tmdb_reviews(movie_id: int, limit: int = 25):
 @app.route("/")
 def home():
     return render_template("index.html")
+@app.route("/history")
+def history():
+    return render_template("history.html")
+import os
+
+@app.route("/upload_csv", methods=["POST"])
+def upload_csv():
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded!"})
+
+    file = request.files["file"]
+
+    if not file.filename.endswith(".csv"):
+        return jsonify({"error": "Please upload a CSV file only!"})
+
+    save_path = "dataset/custom_reviews.csv"
+
+    # ✅ If old CSV exists → delete it (replace logic)
+    if os.path.exists(save_path):
+        os.remove(save_path)
+
+    # ✅ Save new CSV
+    file.save(save_path)
+
+    try:
+        msg = train_from_csv(save_path)
+    except Exception as e:
+        return jsonify({"error": f"Training failed: {str(e)}"})
+
+    return jsonify({
+        "message": "CSV updated successfully! Old dataset replaced and model retrained."
+    })
 
 
 @app.route("/analyze", methods=["POST"])
@@ -154,7 +222,7 @@ def analyze():
     if len(reviews) == 0:
         return jsonify({"error": "No reviews found on TMDB for this movie. Try another movie."})
 
-    # ✅ Sentiment analysis
+   
     pos, neg = 0, 0
     all_keywords = []
 

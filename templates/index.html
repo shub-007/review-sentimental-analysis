@@ -9,8 +9,10 @@
     <h1>🎬 Movie Review Analyzer</h1>
 
     <input type="text" id="url" placeholder="Paste IMDb/Wikipedia URL OR type Movie Name">
-    <button onclick="analyzeMovie()">Analyze</button>
+    <input type="file" id="csvFile">
+<button onclick="uploadCSV()">Upload CSV & Train Model</button>
 
+    <button onclick="analyzeMovie()">Analyze</button>
     <div id="result" class="result-box"></div>
   </div>
 
